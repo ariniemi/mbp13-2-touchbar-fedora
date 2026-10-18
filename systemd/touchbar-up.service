@@ -1,0 +1,12 @@
+[Unit]
+Description=Bring up MacBook Pro T1 Touch Bar
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/touchbar-up.sh
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
