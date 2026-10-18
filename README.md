@@ -80,6 +80,49 @@ Note: the blacklist file stops udev autoloading `apple_ibridge`;
 `touchbar-up.service` loads it explicitly. Loading from the DKMS post-install
 hook while an old build was stuck caused a hang during testing.
 
+## Configuration
+
+Options live in `/etc/modprobe.d/apple-ib.conf` and apply the next time the
+modules load (reboot, or unload with
+`sudo modprobe -r apple-ib-als apple-ib-tb apple-ibridge` and then
+`sudo systemctl restart touchbar-up.service`).
+
+### Function key mode (`fnmode`)
+
+| Value | Behaviour |
+|-------|-----------|
+| 0 | Function keys only (F1-F12) |
+| 1 | Media keys by default; hold Fn for F-keys |
+| 2 | F-keys by default; hold Fn for media keys |
+| 3 | Media/special keys only |
+
+### Battery saving (`idle_timeout`, `dim_timeout`)
+
+- `idle_timeout=N` (N > 0): turn the bar off after N seconds without input.
+  It turns back on at the next key, trackpad or touch event.
+  `0` = off, `-1` = always on, `-2` = disable the bar entirely.
+- `dim_timeout=N` (N > 0): dim after N seconds. `-1` = never dim,
+  `0` = always dimmed, `-2` = calculate from `idle_timeout` (default).
+
+Example: `options apple-ib-tb idle_timeout=60 dim_timeout=15 fnmode=1`
+
+Tested on the author's machine: `idle_timeout=-1`, `dim_timeout=-1` and
+switching `fnmode` between 0 and 3. The example values above are the shipped
+defaults in `modprobe/apple-ib.conf` and have not been verified in detail.
+
+### Changing values at runtime
+
+The live values are files next to the HID device:
+
+```sh
+D=$(dirname "$(find /sys -name idle_timeout -path '*8600*' 2>/dev/null | head -1)")
+echo 30 | sudo tee $D/idle_timeout
+echo 0  | sudo tee $D/fnmode
+```
+
+Runtime changes are lost on reload. The device number in the path changes
+between boots, which is why the snippet uses `find`.
+
 ## Generating patch files
 
 If you prefer real `.patch` files, run in the patched source dir
