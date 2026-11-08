@@ -1,11 +1,17 @@
-# Touch Bar on MacBookPro13,2 (T1) under Fedora 44, kernel 7.2
+# Fedora on a MacBookPro13,2 (2016 13" Touch Bar): Touch Bar, audio, Wi-Fi notes
 
-Notes, patches and boot glue for getting the Touch Bar working on a 2016
-13" MacBook Pro with Touch Bar (T1 / "iBridge", USB `05ac:8600`).
+Notes, patches and boot glue for running Fedora on a 2016 13" MacBook Pro with
+Touch Bar (MacBookPro13,2, T1 chip). Covers what I got working and what doesn't.
 
-Tested: MacBookPro13,2, Fedora 44, kernel 7.2.11-200.fc44.x86_64, no Secure Boot.
-Result: Touch Bar lit, Esc + function/media keys working. No graphical
-Touch Bar (display mode) - that needs a userspace stack that targets T2 Macs.
+| Area | Status |
+|------|--------|
+| Keyboard, trackpad | Work out of the box (`applespi`, mainline) |
+| Touch Bar | Lit, Esc + function/media keys work. No graphical display mode. See "Touch Bar" |
+| Audio | Works with the `snd_hda_macbookpro` DKMS driver. See "Audio" |
+| Wi-Fi | WPA3-only networks do not work (firmware lacks SAE). See "Wi-Fi" |
+
+Tested: Fedora 44 / kernel 7.2.11-200.fc44 (Touch Bar), kernel
+7.2.15-300.fc45 (audio), no Secure Boot.
 
 ## Credits and upstream
 
@@ -18,8 +24,13 @@ included. It is based on:
 - https://github.com/roadrunner2/macbook12-spi-driver
   (Ronald Tschalar), originally started by cb22.
 
-The driver is licensed GPL-2.0. The patches here apply to that code and are
+Audio uses https://github.com/davidjo/snd_hda_macbookpro (GPL-2.0), installed
+unmodified; nothing from it is copied here.
+
+The Touch Bar driver is licensed GPL-2.0. The patches here apply to that code and are
 offered under the same licence. All credit for the driver goes to its authors.
+
+# Touch Bar
 
 ## Background
 
@@ -137,3 +148,61 @@ diff -u --label a/apple-ibridge.c --label b/apple-ibridge.c apple-ibridge.c.orig
 
 Suspend/resume (try `systemctl restart touchbar-up.service` after wake),
 display mode, the touch shim, and the ambient light sensor.
+
+# Audio
+
+Symptom: the sound card is detected (`aplay -l` shows `CS8409 Analog`,
+PipeWire has a default sink) but nothing comes out. `pw-play` returns no error,
+and `amixer -c 0 scontrols` lists only PCM, Mic, IEC958 and Internal Mic, with
+no Speaker or Master control. `dmesg` shows the stock `snd_hda_codec_cs8409`
+binding without the Apple-specific setup.
+
+Fix: install the patched Cirrus CS8409 driver via DKMS.
+
+1. `egorenar/snd-hda-codec-cs8409` did **not** build on kernel 7.2. The HDA core
+   dropped `patch_ops` from `struct hda_codec` and changed `hda_codec_ops`
+   (errors: `has no member named 'free'`, `has no member named 'patch_ops'`).
+   The same errors are reported on 6.17+. It needs porting to the new API.
+2. `davidjo/snd_hda_macbookpro` builds and works on 7.2.15 (its log notes
+   kernels from 7.0 onwards are allowed, with a warning that later kernels may
+   need changes):
+
+```sh
+sudo dnf install dkms kernel-devel kernel-headers gcc make patch wget tar xz git
+git clone https://github.com/davidjo/snd_hda_macbookpro.git ~/snd_hda_macbookpro
+cd ~/snd_hda_macbookpro
+sudo ./install.cirrus.driver.sh -i
+sudo reboot
+```
+
+Notes:
+
+- The script downloads the mainline kernel source (150 MB+) for your kernel
+  version and patches the HDA sources, so you need a connection.
+- Keep the cloned folder. DKMS uses a symlink,
+  `/usr/src/snd_hda_macbookpro-0.1`, that points into it.
+- The script's final `ls` of `updates/dkms` prints "No such file or directory"
+  on Fedora because DKMS puts the module in `extra/`. That is not a failure.
+  Check with `sudo dkms status` and
+  `find /lib/modules/$(uname -r) -name 'snd-hda-codec-cs8409*'`.
+- After a kernel update, run `sudo dkms status`. If audio disappears, a missing
+  or failed rebuild is the first thing to check. Older kernels stay selectable
+  in GRUB.
+- Remove with `sudo ./install.cirrus.driver.sh -r` and reboot. The original
+  module is restored.
+- Microphone and headset behaviour is not tested here. The driver's own notes
+  say input is less complete than output.
+
+# Wi-Fi
+
+Hardware: Broadcom BCM43602, driver `brcmfmac`. The firmware loaded under Linux
+is from Nov 2015 (version 7.35.177.61). `iw phy` lists no `SAE` or `SAE_OFFLOAD`
+in the extended features, only PSK and 802.1X handshakes, so **WPA3-only
+networks cannot be joined**. This is a firmware limit, not a setting.
+
+Workarounds: set the router to WPA2/WPA3 mixed mode, use a WPA2 network
+(guest SSID, phone hotspot), USB tethering, or a USB Wi-Fi adapter.
+
+Unresolved: whether macOS (which uses Apple's own firmware) connects to WPA3
+on this chip, and whether that firmware could be used with `brcmfmac`. I did
+not test that.
