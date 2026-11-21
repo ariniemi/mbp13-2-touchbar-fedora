@@ -10,8 +10,8 @@ Touch Bar (MacBookPro13,2, T1 chip). Covers what I got working and what doesn't.
 | Audio | Works with the `snd_hda_macbookpro` DKMS driver. See "Audio" |
 | Wi-Fi | WPA3-only networks do not work (firmware lacks SAE). See "Wi-Fi" |
 
-Tested: Fedora 44 / kernel 7.2.11-200.fc44 (Touch Bar), kernel
-7.2.15-300.fc45 (audio), no Secure Boot.
+Tested: kernels 7.2.11-200.fc44 and 7.2.15-300.fc45 (Touch Bar, audio), and
+7.3.4-300.fc45 (Touch Bar with the 7.3 patch, audio), no Secure Boot.
 
 ## Credits and upstream
 
@@ -65,6 +65,16 @@ offered under the same licence. All credit for the driver goes to its authors.
    into Linux. Keep a small macOS partition for this (~40 GB).
 7. Unrelated kernel WARNING from `iio-sensor-proxy` / `apple_ib_als`
    (`__setup_irq`). Harmless; blacklist `apple_ib_als` if it bothers you.
+8. **Kernel 7.3 removed `struct acpi_driver`.** `apple-ibridge.c` then fails to
+   build (`variable 'appleib_driver' has initializer but incomplete type`,
+   `struct acpi_driver has no member named 'name'`). `APP7777:00` is exposed as
+   a platform device on 7.3, so the driver is ported to a `platform_driver`
+   with the same ACPI match table. `patches/fix-acpi-driver-7.3.py` does this
+   and keeps the old code for kernels before 7.3 behind a version check.
+9. **After a kernel update** the modules are only rebuilt if the matching
+   `kernel-devel` package is installed. If the bar goes dark after an update,
+   check `uname -r`, `sudo dkms status` and the `touchbar-up.service` journal
+   (`modprobe: Module apple-ibridge not found` means no build for that kernel).
 
 ## Install
 
@@ -72,6 +82,7 @@ offered under the same licence. All credit for the driver goes to its authors.
 sudo dnf install dkms kernel-devel kernel-headers gcc make git
 git clone https://github.com/F13-Kr1pt0n/macbook-pro-touchbar-driver.git
 python3 patches/apply-fixes.py macbook-pro-touchbar-driver
+python3 patches/fix-acpi-driver-7.3.py macbook-pro-touchbar-driver   # needed on 7.3+, harmless before
 
 sudo mkdir -p /usr/src/appleibridge-0.1
 sudo cp -r macbook-pro-touchbar-driver/. /usr/src/appleibridge-0.1
@@ -137,7 +148,8 @@ between boots, which is why the snippet uses `find`.
 ## Generating patch files
 
 If you prefer real `.patch` files, run in the patched source dir
-(the `.orig` backups are made by `apply-fixes.py`):
+(the `.orig` backups are made by `apply-fixes.py`, and
+`apple-ibridge.c.pre73` by `fix-acpi-driver-7.3.py`):
 
 ```sh
 diff -u --label a/apple-ib-tb.c --label b/apple-ib-tb.c apple-ib-tb.c.orig apple-ib-tb.c > 0001-fix-tb_touch-incomplete-type.patch
