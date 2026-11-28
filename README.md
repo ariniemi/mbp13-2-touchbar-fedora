@@ -10,8 +10,9 @@ Touch Bar (MacBookPro13,2, T1 chip). Covers what I got working and what doesn't.
 | Audio | Works with the `snd_hda_macbookpro` DKMS driver. See "Audio" |
 | Wi-Fi | WPA3-only networks do not work (firmware lacks SAE). See "Wi-Fi" |
 
-Tested: kernels 7.2.11-200.fc44 and 7.2.15-300.fc45 (Touch Bar, audio), and
-7.3.4-300.fc45 (Touch Bar with the 7.3 patch, audio), no Secure Boot.
+Tested: kernels 7.2.11-200.fc44 and 7.2.15-300.fc45 (Touch Bar, audio),
+7.3.4-300.fc45 (both, with the 7.3 Touch Bar patch) and 7.3.6-300.fc45 (both,
+with the 7.3 Touch Bar patch and the audio jack-table patch), no Secure Boot.
 
 ## Credits and upstream
 
@@ -202,6 +203,27 @@ Notes:
   in GRUB.
 - Remove with `sudo ./install.cirrus.driver.sh -r` and reboot. The original
   module is restored.
+- **Kernel 7.3.6 broke the audio build.** The HDA jack table changed from
+  `struct snd_array jacktbl` (`.list`/`.used`) to a linked list (`jacktbl`,
+  `jacktbl_last`, `jacktbl_used`, entries linked by `->next`). The driver's copied
+  jack routines then fail with `'codec->jacktbl' is a pointer; did you mean to
+  use '->'?` and `passing argument 1 of 'snd_array_new' from incompatible
+  pointer type`. `patches/fix-snd-jacktbl-list.py` ports them and keeps the old
+  code for older kernels:
+
+  ```sh
+  cd ~/snd_hda_macbookpro
+  python3 -I /path/to/patches/fix-snd-jacktbl-list.py .
+  sudo dkms install -m snd_hda_macbookpro -v 0.1 -k "$(uname -r)" --force
+  ```
+
+  Tested: speakers work on 7.3.6. The layout is chosen at compile time, with
+  the list used from 7.3.5 on. I know 7.3.4 has the array and 7.3.6 has the
+  list, but not exactly where it changed, so the 7.3.5 cutoff is a guess.
+  Override it with `-DHDA_JACKTBL_LIST=0` or `=1`. The patch modifies a tracked
+  file, so run `git checkout patch_cirrus/cirrus_apple.h` before `git pull`,
+  then apply it again. Check whether upstream has fixed it before applying.
+  Headphone jack switching is not tested here.
 - Microphone and headset behaviour is not tested here. The driver's own notes
   say input is less complete than output.
 
